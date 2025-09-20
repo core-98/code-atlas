@@ -3,7 +3,7 @@ import path from "node:path";
 
 import { CompanyExplorer, type CompaniesDataset } from "@/components/company-explorer";
 
-export const revalidate = 60 * 60 * 24; // revalidate once per day
+export const revalidate = 86400; // revalidate once per day
 
 async function loadCompanies(): Promise<CompaniesDataset> {
   const filePath = path.join(process.cwd(), "public", "data", "companies.json");

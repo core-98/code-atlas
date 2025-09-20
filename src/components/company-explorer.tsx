@@ -2,15 +2,16 @@
 
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
-import { Building2, Search, SlidersHorizontal } from "lucide-react";
+import { Building2, Loader2, Search, SlidersHorizontal } from "lucide-react";
 
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { ProgressCircle } from "@/components/ui/progress-circle";
 import { cn } from "@/lib/utils";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 
 export type ProblemRecord = {
   difficulty: "EASY" | "MEDIUM" | "HARD" | string;
@@ -147,29 +148,130 @@ const TOP_COMPANIES = [
 
 const emptyResultCopy = "No problems match the current filters. Try adjusting your search or difficulty toggles.";
 
-function formatPercent(value: number | null) {
-  if (value === null || Number.isNaN(value)) return "n/a";
-  return `${Math.round(value)}%`;
-}
+const STORAGE_KEY = "codeatlas-view";
+const DEFAULT_PAGE_SIZE = 40;
 
-function formatAcceptance(value: number | null) {
-  if (value === null || Number.isNaN(value)) return "n/a";
-  return `${(value * 100).toFixed(1)}%`;
+function getProblemKey(problem: ProblemRecord) {
+  return problem.link || `${problem.title}-${problem.difficulty}`;
 }
 
 export function CompanyExplorer({ initialData }: CompanyExplorerProps) {
   const [companyQuery, setCompanyQuery] = useState("");
   const [problemQuery, setProblemQuery] = useState("");
   const [sortOption, setSortOption] = useState<string>(SORT_OPTIONS[0]?.value ?? "frequency-desc");
-  const [selectedCompanySlug, setSelectedCompanySlug] = useState<string | null>(
-    initialData.companies[0]?.slug ?? null
-  );
-  const [selectedCategorySlug, setSelectedCategorySlug] = useState<string | null>(
-    initialData.companies[0]?.categories[0]?.slug ?? null
-  );
+  const [selectedCompanySlug, setSelectedCompanySlug] = useState<string | null>("all");
+  const [selectedCategorySlug, setSelectedCategorySlug] = useState<string | null>("all");
   const [difficulties, setDifficulties] = useState<Record<DifficultyKey, boolean>>(DEFAULT_DIFFICULTIES);
+  const [visibleCount, setVisibleCount] = useState(DEFAULT_PAGE_SIZE);
+  const [hydrated, setHydrated] = useState(false);
 
-  const companies = initialData.companies;
+  const allProblemsCompany = useMemo<CompanyRecord>(() => {
+    const allProblems = new Map<string, ProblemRecord>();
+
+    initialData.companies.forEach((company) => {
+      company.categories.forEach((category) => {
+        category.problems.forEach((problem) => {
+          const key = getProblemKey(problem);
+          if (!key || allProblems.has(key)) {
+            return;
+          }
+          allProblems.set(key, problem);
+        });
+      });
+    });
+
+    const problems = Array.from(allProblems.values()).sort((a, b) => {
+      const freqA = typeof a.frequency === "number" ? a.frequency : -Infinity;
+      const freqB = typeof b.frequency === "number" ? b.frequency : -Infinity;
+      return freqB - freqA;
+    });
+
+    return {
+      name: "All Companies",
+      slug: "all",
+      totals: {
+        categories: 1,
+        problems: problems.length,
+      },
+      categories: [
+        {
+          name: "All Questions",
+          slug: "all",
+          problems,
+          count: problems.length,
+        },
+      ],
+    };
+  }, [initialData.companies]);
+
+  const companies = useMemo(() => [allProblemsCompany, ...initialData.companies], [allProblemsCompany, initialData.companies]);
+
+  const problemCompanyIndex = useMemo(() => {
+    const map = new Map<string, Array<{ slug: string; name: string }>>();
+
+    initialData.companies.forEach((company) => {
+      company.categories.forEach((category) => {
+        category.problems.forEach((problem) => {
+          const key = getProblemKey(problem);
+          if (!key) {
+            return;
+          }
+          const existing = map.get(key) ?? [];
+          if (!existing.some((entry) => entry.slug === company.slug)) {
+            existing.push({ slug: company.slug, name: company.name });
+            map.set(key, existing);
+          }
+        });
+      });
+    });
+
+    return map;
+  }, [initialData.companies]);
+
+  useEffect(() => {
+    if (typeof window === "undefined") {
+      return;
+    }
+
+    try {
+      const raw = window.localStorage.getItem(STORAGE_KEY);
+      if (!raw) {
+        setHydrated(true);
+        return;
+      }
+
+      const saved = JSON.parse(raw) as Partial<{
+        selectedCompanySlug: string | null;
+        selectedCategorySlug: string | null;
+        problemQuery: string;
+        sortOption: string;
+        difficulties: Record<DifficultyKey, boolean>;
+      }>;
+
+      if (saved.selectedCompanySlug && companies.some((company) => company.slug === saved.selectedCompanySlug)) {
+        setSelectedCompanySlug(saved.selectedCompanySlug);
+        if (saved.selectedCategorySlug) {
+          setSelectedCategorySlug(saved.selectedCategorySlug);
+        }
+      }
+
+      if (typeof saved.problemQuery === "string") {
+        setProblemQuery(saved.problemQuery);
+      }
+
+      if (saved.sortOption && SORT_OPTIONS.some((option) => option.value === saved.sortOption)) {
+        setSortOption(saved.sortOption);
+      }
+
+      if (saved.difficulties) {
+        setDifficulties((prev) => ({ ...prev, ...saved.difficulties }));
+      }
+    } catch (error) {
+      console.warn("Failed to restore cached view state", error);
+    } finally {
+      setHydrated(true);
+    }
+  }, [companies]);
 
   const featuredCompanies = useMemo(() => {
     const companyMap = new Map(companies.map((company) => [company.slug, company]));
@@ -265,6 +367,13 @@ export function CompanyExplorer({ initialData }: CompanyExplorerProps) {
     });
   }, [activeCategory, difficulties, problemQuery, sortOption]);
 
+  const visibleProblems = useMemo(() => activeProblems.slice(0, visibleCount), [activeProblems, visibleCount]);
+  const hasMore = visibleCount < activeProblems.length;
+
+  useEffect(() => {
+    setVisibleCount(DEFAULT_PAGE_SIZE);
+  }, [selectedCompanySlug, selectedCategorySlug, problemQuery, sortOption, difficulties]);
+
   const toggleDifficulty = (difficulty: DifficultyKey) => {
     setDifficulties((prev) => {
       const next = { ...prev, [difficulty]: !prev[difficulty] };
@@ -293,7 +402,30 @@ export function CompanyExplorer({ initialData }: CompanyExplorerProps) {
     setProblemQuery("");
     setSortOption(SORT_OPTIONS[0]?.value ?? "frequency-desc");
     setDifficulties({ ...DEFAULT_DIFFICULTIES });
+    setSelectedCompanySlug("all");
+    setSelectedCategorySlug("all");
+    setVisibleCount(DEFAULT_PAGE_SIZE);
   };
+
+  useEffect(() => {
+    if (!hydrated || typeof window === "undefined") {
+      return;
+    }
+
+    const payload = {
+      selectedCompanySlug,
+      selectedCategorySlug,
+      problemQuery,
+      sortOption,
+      difficulties,
+    };
+
+    try {
+      window.localStorage.setItem(STORAGE_KEY, JSON.stringify(payload));
+    } catch (error) {
+      console.warn("Failed to persist view state", error);
+    }
+  }, [hydrated, selectedCompanySlug, selectedCategorySlug, problemQuery, sortOption, difficulties]);
 
   const difficultySummary =
     activeDifficultyLabels.length === DIFFICULTY_ORDER.length
@@ -303,9 +435,13 @@ export function CompanyExplorer({ initialData }: CompanyExplorerProps) {
   const sortLabel =
     SORT_OPTIONS.find((option) => option.value === sortOption)?.label ?? SORT_OPTIONS[0].label;
 
-  const datasetMeta = `Companies: ${initialData.totalCompanies.toLocaleString()} · Generated: ${new Date(
+  const allCompaniesMeta = `Companies: ${initialData.totalCompanies.toLocaleString()} · Unique questions: ${allProblemsCompany.totals.problems.toLocaleString()} · Generated: ${new Date(
     initialData.generatedAt
   ).toLocaleDateString()}`;
+
+  const headerSubtitle = selectedCompany?.slug === "all"
+    ? allCompaniesMeta
+    : `${selectedCompany?.totals.problems.toLocaleString() ?? 0} problems · ${selectedCompany?.totals.categories ?? 0} categories`;
 
   return (
     <div className="container space-y-4 py-4 sm:py-6">
@@ -313,8 +449,8 @@ export function CompanyExplorer({ initialData }: CompanyExplorerProps) {
         <div className="flex items-start gap-3 text-sm text-muted-foreground sm:items-center">
           <Building2 className="hidden h-5 w-5 text-primary sm:inline" />
           <div>
-            <p className="font-semibold text-foreground">{selectedCompany?.name ?? "Select a company"}</p>
-            <p>{datasetMeta}</p>
+            <p className="text-base font-semibold text-foreground sm:text-lg">{selectedCompany?.name ?? "All Companies"}</p>
+            <p>{headerSubtitle}</p>
           </div>
         </div>
         <div className="flex items-center gap-2 text-xs text-muted-foreground">
@@ -569,85 +705,144 @@ export function CompanyExplorer({ initialData }: CompanyExplorerProps) {
                 </CardContent>
               </Card>
             ) : (
-              activeProblems.map((problem) => (
-                <Card
-                  key={problem.link}
-                  className="h-[150px] transition-all hover:border-primary/50 hover:shadow-lg sm:h-[140px]"
-                >
-                  <CardContent className="flex h-full flex-col justify-between gap-2 py-3">
-                    <div className="flex items-start justify-between gap-3">
-                      <div>
-                        <h3 className="text-sm font-semibold leading-tight text-foreground line-clamp-2">
-                          <Link
-                            href={problem.link}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            className="hover:text-primary hover:underline"
+              visibleProblems.map((problem) => {
+                const frequencyValue = typeof problem.frequency === "number" ? problem.frequency : null;
+                const acceptanceValue =
+                  typeof problem.acceptanceRate === "number" ? problem.acceptanceRate * 100 : null;
+                const problemKey = getProblemKey(problem);
+                const relatedCompanies = problemCompanyIndex.get(problemKey) ?? [];
+                const sortedCompanies = [...relatedCompanies].sort((a, b) => a.name.localeCompare(b.name));
+                const displayCompanies = sortedCompanies.slice(0, 8);
+                const remainingCompanies = sortedCompanies.length - displayCompanies.length;
+
+                return (
+                  <Card
+                    key={problem.link}
+                    className="transition-all hover:border-primary/50 hover:shadow-lg"
+                  >
+                    <CardContent className="flex flex-col gap-3 py-3">
+                      <div className="flex flex-wrap items-center justify-between gap-3">
+                        <div className="flex min-w-0 items-center gap-2">
+                          <h3 className="text-sm font-semibold leading-tight text-foreground line-clamp-2">
+                            <Link
+                              href={problem.link}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="hover:text-primary hover:underline"
+                            >
+                              {problem.title}
+                            </Link>
+                          </h3>
+                          <Badge
+                            className={cn(
+                              "border text-[10px] font-semibold",
+                              DIFFICULTY_COLORS[problem.difficulty] ?? "bg-secondary text-secondary-foreground"
+                            )}
                           >
-                            {problem.title}
-                          </Link>
-                        </h3>
-                        <div className="mt-1 flex flex-wrap gap-2 text-[11px] text-muted-foreground">
-                          <span>
-                            Frequency: <span className="font-semibold text-foreground">{formatPercent(problem.frequency)}</span>
-                          </span>
-                          <span>
-                            Acceptance: <span className="font-semibold text-foreground">{formatAcceptance(problem.acceptanceRate)}</span>
-                          </span>
+                            {problem.difficulty}
+                          </Badge>
+                        </div>
+                        <div className="flex items-center gap-2 sm:gap-3">
+                          <ProgressCircle
+                            value={frequencyValue}
+                            label="Frequency"
+                            displayLabel="F"
+                            size={48}
+                            showPercentText={false}
+                          />
+                          <ProgressCircle
+                            value={acceptanceValue}
+                            label="Acceptance"
+                            displayLabel="A"
+                            size={48}
+                            showPercentText={false}
+                          />
                         </div>
                       </div>
-                      <Badge
-                        className={cn(
-                          "border text-[10px] font-semibold",
-                          DIFFICULTY_COLORS[problem.difficulty] ?? "bg-secondary text-secondary-foreground"
-                        )}
-                      >
-                        {problem.difficulty}
-                      </Badge>
-                    </div>
 
-                    <div className="flex flex-wrap gap-1 overflow-hidden text-[11px]">
-                      {problem.topics.length > 0 ? (
-                        problem.topics.map((topic) => (
-                          <span
-                            key={`${problem.title}-${topic}`}
-                            className="rounded-full border border-border bg-muted px-2.5 py-0.5 text-muted-foreground"
-                          >
-                            {topic}
-                          </span>
-                        ))
-                      ) : (
-                        <span className="rounded-full border border-border px-2.5 py-0.5 text-muted-foreground">
-                          No topics tagged
-                        </span>
-                      )}
-                    </div>
-                    {problem.solutions && problem.solutions.length > 0 && (
-                      <div className="flex flex-wrap gap-2 text-[11px] text-muted-foreground">
-                        {problem.solutions.slice(0, 4).map((solution) => (
-                          <Link
-                            key={`${problem.title}-${solution.language}`}
-                            href={solution.url}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            className="inline-flex items-center gap-1 rounded-full border border-border/60 bg-background/60 px-2.5 py-0.5 font-medium text-foreground transition hover:border-primary/60 hover:text-primary"
-                          >
-                            <span className="h-1.5 w-1.5 rounded-full bg-primary"></span>
-                            {solution.language}
-                          </Link>
-                        ))}
-                        {problem.solutions.length > 4 && (
-                          <span className="rounded-full border border-border/60 bg-background/60 px-2.5 py-0.5 font-medium text-muted-foreground">
-                            +{problem.solutions.length - 4}
+                      <div className="flex flex-wrap gap-1 text-[11px]">
+                        {problem.topics.length > 0 ? (
+                          problem.topics.map((topic) => (
+                            <span
+                              key={`${problem.title}-${topic}`}
+                              className="rounded-full border border-border bg-muted px-2.5 py-0.5 text-muted-foreground"
+                            >
+                              {topic}
+                            </span>
+                          ))
+                        ) : (
+                          <span className="rounded-full border border-border px-2.5 py-0.5 text-muted-foreground">
+                            No topics tagged
                           </span>
                         )}
                       </div>
-                    )}
-                  </CardContent>
-                </Card>
-              ))
+
+                      {displayCompanies.length > 0 && (
+                        <div className="flex flex-wrap gap-1 text-[11px]">
+                          {displayCompanies.map((entry) => {
+                            const isCurrent = selectedCompany?.slug === entry.slug;
+                            return (
+                              <button
+                                key={`${problemKey}-${entry.slug}`}
+                                type="button"
+                                onClick={() => setSelectedCompanySlug(entry.slug)}
+                                className={cn(
+                                  "inline-flex items-center gap-1 rounded-full border px-2.5 py-0.5 transition",
+                                  isCurrent
+                                    ? "border-primary/60 bg-primary/15 text-primary-foreground shadow"
+                                    : "border-border/60 bg-background/60 text-muted-foreground hover:border-primary/40 hover:text-foreground"
+                                )}
+                              >
+                                {entry.name}
+                              </button>
+                            );
+                          })}
+                          {remainingCompanies > 0 && (
+                            <span className="rounded-full border border-border/60 bg-background/60 px-2.5 py-0.5 text-muted-foreground">
+                              +{remainingCompanies}
+                            </span>
+                          )}
+                        </div>
+                      )}
+
+                      {problem.solutions && problem.solutions.length > 0 && (
+                        <div className="flex flex-wrap gap-2 text-[11px] text-muted-foreground">
+                          {problem.solutions.slice(0, 4).map((solution) => (
+                            <Link
+                              key={`${problem.title}-${solution.language}`}
+                              href={solution.url}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="inline-flex items-center gap-1 rounded-full border border-border/60 bg-background/60 px-2.5 py-0.5 font-medium text-foreground transition hover:border-primary/60 hover:text-primary"
+                            >
+                              <span className="h-1.5 w-1.5 rounded-full bg-primary"></span>
+                              {solution.language}
+                            </Link>
+                          ))}
+                          {problem.solutions.length > 4 && (
+                            <span className="rounded-full border border-border/60 bg-background/60 px-2.5 py-0.5 font-medium text-muted-foreground">
+                              +{problem.solutions.length - 4}
+                            </span>
+                          )}
+                        </div>
+                      )}
+                    </CardContent>
+                  </Card>
+                );
+              })
             )}
           </div>
+          {hasMore && (
+            <div className="flex justify-center">
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => setVisibleCount((prev) => prev + DEFAULT_PAGE_SIZE)}
+              >
+                Load more
+              </Button>
+            </div>
+          )}
         </div>
       </div>
     </div>
