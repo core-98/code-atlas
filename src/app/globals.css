@@ -1,0 +1,91 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --background: 210 40% 98%;
+  --foreground: 222.2 47.4% 11.2%;
+
+  --muted: 210 40% 96.1%;
+  --muted-foreground: 215.4 16.3% 46.9%;
+
+  --popover: 0 0% 100%;
+  --popover-foreground: 222.2 47.4% 11.2%;
+
+  --card: 0 0% 100%;
+  --card-foreground: 222.2 47.4% 11.2%;
+
+  --border: 214.3 31.8% 91.4%;
+  --input: 214.3 31.8% 91.4%;
+
+  --primary: 35 100% 50%;
+  --primary-foreground: 26 100% 6%;
+
+  --secondary: 210 40% 96.1%;
+  --secondary-foreground: 222.2 47.4% 11.2%;
+
+  --accent: 35 100% 90%;
+  --accent-foreground: 25 95% 32%;
+
+  --destructive: 0 84.2% 60.2%;
+  --destructive-foreground: 210 40% 98%;
+
+  --ring: 35 100% 50%;
+
+  --radius: 0.75rem;
+
+  --font-sans: "Space Grotesk", "Segoe UI", -apple-system, BlinkMacSystemFont, "Helvetica Neue", sans-serif;
+}
+
+.dark {
+  --background: 225 50% 6%;
+  --foreground: 220 30% 95%;
+
+  --muted: 225 30% 12%;
+  --muted-foreground: 220 12% 70%;
+
+  --popover: 225 45% 8%;
+  --popover-foreground: 220 30% 95%;
+
+  --card: 226 47% 10%;
+  --card-foreground: 220 30% 95%;
+
+  --border: 224 25% 22%;
+  --input: 224 25% 24%;
+
+  --primary: 35 100% 56%;
+  --primary-foreground: 26 100% 6%;
+
+  --secondary: 226 32% 18%;
+  --secondary-foreground: 220 30% 95%;
+
+  --accent: 226 30% 20%;
+  --accent-foreground: 220 30% 95%;
+
+  --destructive: 0 70% 42%;
+  --destructive-foreground: 220 30% 95%;
+
+  --ring: 35 100% 56%;
+}
+
+body {
+  background-color: hsl(var(--background));
+  color: hsl(var(--foreground));
+  font-family: var(--font-sans);
+  min-height: 100vh;
+}
+
+.bg-grid {
+  background-size: 32px 32px;
+  background-image: linear-gradient(hsl(var(--border) / 0.5) 1px, transparent 1px),
+    linear-gradient(90deg, hsl(var(--border) / 0.5) 1px, transparent 1px);
+}
+
+@layer base {
+  * {
+    border-color: hsl(var(--border));
+  }
+  body {
+    @apply bg-background text-foreground;
+  }
+}
