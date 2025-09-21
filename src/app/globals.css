@@ -89,3 +89,71 @@ body {
     @apply bg-background text-foreground;
   }
 }
+
+@layer components {
+  .markdown-body {
+    @apply flex flex-col gap-6 text-base leading-relaxed text-foreground;
+  }
+
+  .markdown-body h1 {
+    @apply text-3xl font-bold tracking-tight;
+  }
+
+  .markdown-body h2 {
+    @apply mt-8 text-2xl font-semibold tracking-tight;
+  }
+
+  .markdown-body h3 {
+    @apply mt-6 text-xl font-semibold;
+  }
+
+  .markdown-body h4,
+  .markdown-body h5,
+  .markdown-body h6 {
+    @apply mt-4 text-lg font-semibold;
+  }
+
+  .markdown-body p {
+    @apply text-muted-foreground;
+  }
+
+  .markdown-body ul {
+    @apply list-disc space-y-2 pl-6 text-muted-foreground;
+  }
+
+  .markdown-body ol {
+    @apply list-decimal space-y-2 pl-6 text-muted-foreground;
+  }
+
+  .markdown-body li {
+    @apply marker:text-primary;
+  }
+
+  .markdown-body pre {
+    @apply overflow-x-auto rounded-xl border border-border/70 bg-muted/40 p-4 text-sm leading-7 text-foreground;
+  }
+
+  .markdown-body code {
+    @apply rounded bg-muted px-1.5 py-0.5 text-sm text-foreground;
+  }
+
+  .markdown-body pre code {
+    @apply block bg-transparent p-0 text-sm;
+  }
+
+  .markdown-body hr {
+    @apply border-border/60;
+  }
+
+  .markdown-body a {
+    @apply font-medium text-primary underline-offset-4 hover:underline;
+  }
+
+  .markdown-body strong {
+    @apply font-semibold text-foreground;
+  }
+
+  .markdown-body em {
+    @apply italic;
+  }
+}

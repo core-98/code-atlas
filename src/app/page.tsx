@@ -1,7 +1,8 @@
 import fs from "node:fs/promises";
 import path from "node:path";
 
-import { CompanyExplorer, type CompaniesDataset } from "@/components/company-explorer";
+import { type CompaniesDataset } from "@/components/company-explorer";
+import { HomeTabs } from "@/components/home-tabs";
 
 export const revalidate = 86400; // revalidate once per day
 
@@ -11,7 +12,13 @@ async function loadCompanies(): Promise<CompaniesDataset> {
   return JSON.parse(fileContent) as CompaniesDataset;
 }
 
+async function loadCppRefresher(): Promise<string> {
+  const filePath = path.join(process.cwd(), "c_stl_crash_course.md");
+  return fs.readFile(filePath, "utf8");
+}
+
 export default async function HomePage() {
-  const data = await loadCompanies();
-  return <CompanyExplorer initialData={data} />;
+  const [data, refresherMarkdown] = await Promise.all([loadCompanies(), loadCppRefresher()]);
+
+  return <HomeTabs data={data} refresherMarkdown={refresherMarkdown} />;
 }
