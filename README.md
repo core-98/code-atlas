@@ -1,37 +1,89 @@
 # CodeAtlas
 
-A mobile-friendly LeetCode company browser built with Next.js 15 (App Router), Tailwind CSS, and shadcn/ui. It loads the curated CSV data from [`liquidslr/leetcode-company-wise-problems`](https://github.com/liquidslr/leetcode-company-wise-problems) and exposes rich filtering for company, category, difficulty, and topic.
+A polished Next.js 15 single-page app that lets you explore LeetCode-style interview problems by company, category, difficulty, and topic. The experience stays snappy on mobile, persists your filter choices, and ships with a built-in modern C++ refresher so you can context switch between data structures and language practice.
 
-## Getting Started
+## Highlights
+- Interactive company explorer with global search, topic chips, difficulty toggles, and range sliders for frequency and acceptance rate
+- Rich problem cards with quick links, tag badges, and optional solution resources when they are available in the dataset
+- Local-first UX: filter state and sort preferences persist in `localStorage`, and the entire dataset is bundled as static JSON for instant loads
+- Dual-tab layout that showcases the explorer alongside a Markdown-powered C++ & STL crash course stored in `c_stl_crash_course.md`
+- Dark/light theme toggle backed by `next-themes` plus smooth Tailwind-driven visuals built on shadcn/ui primitives
 
-Requires Node.js ≥ 18.18. Install dependencies and start the dev server with your preferred package manager:
+## Tech Stack
+- Next.js 15 App Router with React 18 and TypeScript
+- Tailwind CSS with shadcn/ui component compositions and Radix UI primitives
+- Lucide icons, next-themes for theming, and custom utilities such as the lightweight Markdown renderer in `src/components/markdown-renderer.tsx`
 
-```bash
-# npm
-npm install
-npm run dev
+## Quick Start
+1. Install Node.js 18.18 or newer.
+2. Install dependencies and start the dev server with your preferred package manager:
+   ```bash
+   npm install
+   npm run dev
+   # or
+   yarn install
+   yarn dev
+   ```
+3. Visit `http://localhost:3000` to explore the app. Hot reloading is enabled out of the box.
 
-# yarn
-yarn install
-yarn dev
+### Available scripts
+- `npm run dev` — start the Next.js development server
+- `npm run build` — create a production build in `.next`
+- `npm run start` — serve the production build
+- `npm run lint` — run ESLint using `next lint`
+
+## Project layout
+- `src/app` — App Router entry points (`layout.tsx`, `page.tsx`, metadata, and global styles)
+- `src/components` — Feature modules (`company-explorer`, `home-tabs`, UI primitives, theme toggle, Markdown renderer)
+- `src/lib` — Shared utilities such as the Tailwind `cn` helper
+- `public/data/companies.json` — Static dataset powering the explorer
+- `c_stl_crash_course.md` — Markdown content rendered inside the C++ refresher tab
+
+## Data refresh workflow
+The explorer ships with a prebuilt `public/data/companies.json` file containing:
+```json
+{
+  "generatedAt": "ISO timestamp",
+  "totalCompanies": 470,
+  "companies": [
+    {
+      "name": "...",
+      "slug": "...",
+      "totals": { "categories": 0, "problems": 0 },
+      "categories": [
+        {
+          "name": "...",
+          "slug": "...",
+          "count": 0,
+          "problems": [
+            {
+              "title": "...",
+              "difficulty": "EASY|MEDIUM|HARD",
+              "frequency": 0,
+              "acceptanceRate": 0,
+              "link": "https://...",
+              "topics": ["..."],
+              "solutions": [{ "language": "...", "url": "https://..." }]
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}
 ```
+To regenerate the file:
+- Pull the latest CSV exports from [liquidslr/leetcode-company-wise-problems](https://github.com/liquidslr/leetcode-company-wise-problems).
+- Convert the CSVs into the JSON shape above (the original repository provides scripts you can adapt, or you can write your own transform).
+- Place the resulting file at `public/data/companies.json` and redeploy.
 
-Open <http://localhost:3000> in your browser to view the app.
+## C++ refresher tab
+`page.tsx` loads the Markdown stored in `c_stl_crash_course.md` and renders it through the custom parser in `MarkdownRenderer`. Update the Markdown file to tweak the curriculum or swap in an entirely different study guide. No additional build steps are required.
 
-## Deploying to Vercel
+## Deployment
+- Production builds are static-friendly; deploy on Vercel (recommended) or any platform that runs `next start`.
+- Use the default build command (`npm run build`) and output directory (`.next`). Environment variables are not required for the default setup.
 
-This project is ready for one-click deployment:
-
-1. Push the `company-explorer` folder to a Git repository.
-2. Import the repository into Vercel.
-3. Use the default build command (`npm run build`) and output (`.next`).
-
-## Refreshing the dataset
-
-The static JSON data lives at `public/data/companies.json`. Regenerate it by running the helper script from the repository root:
-
-```bash
-node ../scripts/generate-data.js
-```
-
-Copy the updated file into `public/data/companies.json` before committing.
+## Acknowledgements
+- Dataset sourced from [liquidslr/leetcode-company-wise-problems](https://github.com/liquidslr/leetcode-company-wise-problems).
+- UI foundations inspired by the shadcn/ui component library.
