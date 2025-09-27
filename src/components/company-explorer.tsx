@@ -7,6 +7,7 @@ import { Building2, Loader2, Search, SlidersHorizontal } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { ProgressCircle } from "@/components/ui/progress-circle";
@@ -150,6 +151,10 @@ const emptyResultCopy = "No problems match the current filters. Try adjusting yo
 
 const STORAGE_KEY = "codeatlas-view";
 const DEFAULT_PAGE_SIZE = 40;
+const DEFAULT_ACCEPTANCE_RANGE = { min: 0, max: 100 } as const;
+const DEFAULT_FREQUENCY_RANGE = { min: 0, max: 100 } as const;
+
+const clampNumber = (value: number, min: number, max: number) => Math.min(Math.max(value, min), max);
 
 function getProblemKey(problem: ProblemRecord) {
   return problem.link || `${problem.title}-${problem.difficulty}`;
@@ -161,6 +166,10 @@ export function CompanyExplorer({ initialData }: CompanyExplorerProps) {
   const [sortOption, setSortOption] = useState<string>(SORT_OPTIONS[0]?.value ?? "frequency-desc");
   const [selectedCompanySlug, setSelectedCompanySlug] = useState<string | null>("all");
   const [selectedCategorySlug, setSelectedCategorySlug] = useState<string | null>("all");
+  const [selectedTopics, setSelectedTopics] = useState<string[]>([]);
+  const [acceptanceRange, setAcceptanceRange] = useState<{ min: number; max: number }>({ ...DEFAULT_ACCEPTANCE_RANGE });
+  const [frequencyRange, setFrequencyRange] = useState<{ min: number; max: number }>({ ...DEFAULT_FREQUENCY_RANGE });
+  const [onlyWithSolutions, setOnlyWithSolutions] = useState(false);
   const [difficulties, setDifficulties] = useState<Record<DifficultyKey, boolean>>(DEFAULT_DIFFICULTIES);
   const [visibleCount, setVisibleCount] = useState(DEFAULT_PAGE_SIZE);
   const [hydrated, setHydrated] = useState(false);
@@ -243,6 +252,10 @@ export function CompanyExplorer({ initialData }: CompanyExplorerProps) {
       const saved = JSON.parse(raw) as Partial<{
         selectedCompanySlug: string | null;
         selectedCategorySlug: string | null;
+        selectedTopics: string[];
+        acceptanceRange: { min: number; max: number };
+        frequencyRange: { min: number; max: number };
+        onlyWithSolutions: boolean;
         problemQuery: string;
         sortOption: string;
         difficulties: Record<DifficultyKey, boolean>;
@@ -253,6 +266,42 @@ export function CompanyExplorer({ initialData }: CompanyExplorerProps) {
         if (saved.selectedCategorySlug) {
           setSelectedCategorySlug(saved.selectedCategorySlug);
         }
+      }
+
+      if (Array.isArray(saved.selectedTopics)) {
+        setSelectedTopics(saved.selectedTopics.filter((topic) => typeof topic === "string"));
+      }
+
+      if (saved.acceptanceRange) {
+        setAcceptanceRange(() => {
+          const minValue = typeof saved.acceptanceRange?.min === "number"
+            ? clampNumber(saved.acceptanceRange.min, DEFAULT_ACCEPTANCE_RANGE.min, DEFAULT_ACCEPTANCE_RANGE.max)
+            : DEFAULT_ACCEPTANCE_RANGE.min;
+          const maxValue = typeof saved.acceptanceRange?.max === "number"
+            ? clampNumber(saved.acceptanceRange.max, DEFAULT_ACCEPTANCE_RANGE.min, DEFAULT_ACCEPTANCE_RANGE.max)
+            : DEFAULT_ACCEPTANCE_RANGE.max;
+          const nextMin = Math.min(minValue, maxValue);
+          const nextMax = Math.max(maxValue, nextMin);
+          return { min: nextMin, max: nextMax };
+        });
+      }
+
+      if (saved.frequencyRange) {
+        setFrequencyRange(() => {
+          const minValue = typeof saved.frequencyRange?.min === "number"
+            ? clampNumber(saved.frequencyRange.min, DEFAULT_FREQUENCY_RANGE.min, DEFAULT_FREQUENCY_RANGE.max)
+            : DEFAULT_FREQUENCY_RANGE.min;
+          const maxValue = typeof saved.frequencyRange?.max === "number"
+            ? clampNumber(saved.frequencyRange.max, DEFAULT_FREQUENCY_RANGE.min, DEFAULT_FREQUENCY_RANGE.max)
+            : DEFAULT_FREQUENCY_RANGE.max;
+          const nextMin = Math.min(minValue, maxValue);
+          const nextMax = Math.max(maxValue, nextMin);
+          return { min: nextMin, max: nextMax };
+        });
+      }
+
+      if (typeof saved.onlyWithSolutions === "boolean") {
+        setOnlyWithSolutions(saved.onlyWithSolutions);
       }
 
       if (typeof saved.problemQuery === "string") {
@@ -329,6 +378,34 @@ export function CompanyExplorer({ initialData }: CompanyExplorerProps) {
     return selectedCompany.categories.find((category) => category.slug === selectedCategorySlug) ?? null;
   }, [selectedCategorySlug, selectedCompany]);
 
+  const availableTopics = useMemo(() => {
+    if (!activeCategory) return [] as string[];
+    const topicSet = new Set<string>();
+    activeCategory.problems.forEach((problem) => {
+      problem.topics.forEach((topic) => {
+        if (topic) {
+          topicSet.add(topic);
+        }
+      });
+    });
+    return Array.from(topicSet).sort((a, b) => a.localeCompare(b));
+  }, [activeCategory]);
+
+  useEffect(() => {
+    if (!activeCategory) {
+      setSelectedTopics((prev) => (prev.length === 0 ? prev : []));
+      return;
+    }
+
+    setSelectedTopics((prev) => {
+      const filtered = prev.filter((topic) => availableTopics.includes(topic));
+      if (filtered.length === prev.length) {
+        return prev;
+      }
+      return filtered;
+    });
+  }, [activeCategory, availableTopics]);
+
   const activeProblems = useMemo(() => {
     if (!activeCategory) return [];
     const enabledDifficulties = Object.entries(difficulties)
@@ -338,6 +415,34 @@ export function CompanyExplorer({ initialData }: CompanyExplorerProps) {
     const base = activeCategory.problems.filter((problem) => {
       const difficultyMatch = enabledDifficulties.includes(problem.difficulty as DifficultyKey);
       if (!difficultyMatch) return false;
+
+      const topicMatch =
+        selectedTopics.length === 0 || selectedTopics.every((topic) => problem.topics.includes(topic));
+      if (!topicMatch) return false;
+
+      const acceptancePercent =
+        typeof problem.acceptanceRate === "number" ? problem.acceptanceRate * 100 : null;
+      const acceptanceMatch =
+        acceptanceRange.min <= 0 && acceptanceRange.max >= 100
+          ? true
+          : typeof acceptancePercent === "number"
+            ? acceptancePercent >= acceptanceRange.min && acceptancePercent <= acceptanceRange.max
+            : false;
+      if (!acceptanceMatch) return false;
+
+      const frequencyValue = typeof problem.frequency === "number" ? problem.frequency : null;
+      const frequencyMatch =
+        frequencyRange.min <= 0 && frequencyRange.max >= 100
+          ? true
+          : typeof frequencyValue === "number"
+            ? frequencyValue >= frequencyRange.min && frequencyValue <= frequencyRange.max
+            : false;
+      if (!frequencyMatch) return false;
+
+      if (onlyWithSolutions && !(problem.solutions && problem.solutions.length > 0)) {
+        return false;
+      }
+
       if (!problemQuery) return true;
       const haystack = `${problem.title} ${problem.topics.join(" ")}`.toLowerCase();
       return haystack.includes(problemQuery.trim().toLowerCase());
@@ -365,14 +470,24 @@ export function CompanyExplorer({ initialData }: CompanyExplorerProps) {
           return compareNumbers(a.frequency, b.frequency);
       }
     });
-  }, [activeCategory, difficulties, problemQuery, sortOption]);
+  }, [acceptanceRange, activeCategory, difficulties, frequencyRange, onlyWithSolutions, problemQuery, selectedTopics, sortOption]);
 
   const visibleProblems = useMemo(() => activeProblems.slice(0, visibleCount), [activeProblems, visibleCount]);
   const hasMore = visibleCount < activeProblems.length;
 
   useEffect(() => {
     setVisibleCount(DEFAULT_PAGE_SIZE);
-  }, [selectedCompanySlug, selectedCategorySlug, problemQuery, sortOption, difficulties]);
+  }, [
+    selectedCompanySlug,
+    selectedCategorySlug,
+    problemQuery,
+    sortOption,
+    difficulties,
+    selectedTopics,
+    acceptanceRange,
+    frequencyRange,
+    onlyWithSolutions,
+  ]);
 
   const toggleDifficulty = (difficulty: DifficultyKey) => {
     setDifficulties((prev) => {
@@ -393,15 +508,29 @@ export function CompanyExplorer({ initialData }: CompanyExplorerProps) {
     [difficulties],
   );
 
+  const isDefaultAcceptanceRange =
+    acceptanceRange.min === DEFAULT_ACCEPTANCE_RANGE.min && acceptanceRange.max === DEFAULT_ACCEPTANCE_RANGE.max;
+
+  const isDefaultFrequencyRange =
+    frequencyRange.min === DEFAULT_FREQUENCY_RANGE.min && frequencyRange.max === DEFAULT_FREQUENCY_RANGE.max;
+
   const hasCustomFilters =
     problemQuery.trim().length > 0 ||
     sortOption !== SORT_OPTIONS[0].value ||
+    selectedTopics.length > 0 ||
+    !isDefaultAcceptanceRange ||
+    !isDefaultFrequencyRange ||
+    onlyWithSolutions ||
     activeDifficultyLabels.length !== Object.keys(DEFAULT_DIFFICULTIES).length;
 
   const resetFilters = () => {
     setProblemQuery("");
     setSortOption(SORT_OPTIONS[0]?.value ?? "frequency-desc");
     setDifficulties({ ...DEFAULT_DIFFICULTIES });
+    setSelectedTopics([]);
+    setAcceptanceRange({ ...DEFAULT_ACCEPTANCE_RANGE });
+    setFrequencyRange({ ...DEFAULT_FREQUENCY_RANGE });
+    setOnlyWithSolutions(false);
     setSelectedCompanySlug("all");
     setSelectedCategorySlug("all");
     setVisibleCount(DEFAULT_PAGE_SIZE);
@@ -415,6 +544,10 @@ export function CompanyExplorer({ initialData }: CompanyExplorerProps) {
     const payload = {
       selectedCompanySlug,
       selectedCategorySlug,
+      selectedTopics,
+      acceptanceRange,
+      frequencyRange,
+      onlyWithSolutions,
       problemQuery,
       sortOption,
       difficulties,
@@ -425,12 +558,38 @@ export function CompanyExplorer({ initialData }: CompanyExplorerProps) {
     } catch (error) {
       console.warn("Failed to persist view state", error);
     }
-  }, [hydrated, selectedCompanySlug, selectedCategorySlug, problemQuery, sortOption, difficulties]);
+  }, [
+    hydrated,
+    selectedCompanySlug,
+    selectedCategorySlug,
+    selectedTopics,
+    acceptanceRange,
+    frequencyRange,
+    onlyWithSolutions,
+    problemQuery,
+    sortOption,
+    difficulties,
+  ]);
 
   const difficultySummary =
     activeDifficultyLabels.length === DIFFICULTY_ORDER.length
       ? "All difficulties"
       : activeDifficultyLabels.join(", ");
+
+  const topicSummary =
+    selectedTopics.length === 0
+      ? "All topics"
+      : [...selectedTopics].sort((a, b) => a.localeCompare(b)).join(", ");
+
+  const acceptanceSummary =
+    isDefaultAcceptanceRange
+      ? "All rates"
+      : `${Math.round(acceptanceRange.min)}% – ${Math.round(acceptanceRange.max)}%`;
+
+  const frequencySummary =
+    isDefaultFrequencyRange
+      ? "All frequencies"
+      : `${Math.round(frequencyRange.min)} – ${Math.round(frequencyRange.max)}`;
 
   const sortLabel =
     SORT_OPTIONS.find((option) => option.value === sortOption)?.label ?? SORT_OPTIONS[0].label;
@@ -595,10 +754,10 @@ export function CompanyExplorer({ initialData }: CompanyExplorerProps) {
               )}
             </CardHeader>
             <CardContent className="space-y-4">
-              <div className="grid gap-3 lg:grid-cols-[minmax(0,2fr)_minmax(0,1fr)]">
-                <div className="flex flex-col gap-4 rounded-xl border border-border/60 bg-card/50 p-3 shadow-sm backdrop-blur">
-                  <div className="grid gap-3 sm:grid-cols-2">
-                    <div className="space-y-1.5">
+              <div className="grid gap-6 xl:grid-cols-[minmax(0,2.2fr)_minmax(0,1fr)]">
+                <div className="grid gap-6 rounded-2xl border border-border/60 bg-card/50 p-4 shadow-sm backdrop-blur">
+                  <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+                    <div className="space-y-2">
                       <span className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
                         Problem search
                       </span>
@@ -612,7 +771,7 @@ export function CompanyExplorer({ initialData }: CompanyExplorerProps) {
                         />
                       </div>
                     </div>
-                    <div className="space-y-1.5">
+                    <div className="space-y-2">
                       <span className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
                         Sort
                       </span>
@@ -628,6 +787,158 @@ export function CompanyExplorer({ initialData }: CompanyExplorerProps) {
                             </option>
                           ))}
                         </select>
+                      </div>
+                    </div>
+                    <div className="space-y-2">
+                      <span className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
+                        Solutions
+                      </span>
+                      <div className="flex items-center justify-between rounded-lg border border-border/70 bg-background/60 px-3 py-2 text-sm shadow-sm backdrop-blur">
+                        <div className="flex items-center gap-2">
+                          <Checkbox
+                            checked={onlyWithSolutions}
+                            onCheckedChange={(checked) => setOnlyWithSolutions(checked === true)}
+                          />
+                          <span className="text-sm font-medium">Require solutions</span>
+                        </div>
+                      </div>
+                      <p className="text-[11px] text-muted-foreground">Hide problems without linked community solutions.</p>
+                    </div>
+                  </div>
+                  <div className="grid gap-6 lg:grid-cols-[minmax(0,1.6fr)_minmax(0,1fr)]">
+                    <div className="space-y-3">
+                      <div className="flex items-center justify-between">
+                        <span className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
+                          Topics
+                        </span>
+                        <button
+                          type="button"
+                          className="text-[11px] font-semibold uppercase tracking-wide text-primary disabled:text-muted-foreground"
+                          onClick={() => setSelectedTopics([])}
+                          disabled={selectedTopics.length === 0}
+                        >
+                          Clear
+                        </button>
+                      </div>
+                      <ScrollArea className="h-48 rounded-xl border border-border/70 bg-background/40 p-3">
+                        <div className="flex flex-col gap-2">
+                          {availableTopics.length === 0 ? (
+                            <span className="text-xs text-muted-foreground">No topics tagged for this track.</span>
+                          ) : (
+                            availableTopics.map((topic) => {
+                              const isChecked = selectedTopics.includes(topic);
+                              return (
+                                <label key={topic} className="flex items-center gap-2 text-sm">
+                                  <Checkbox
+                                    checked={isChecked}
+                                    onCheckedChange={(checked) => {
+                                      setSelectedTopics((prev) => {
+                                        if (checked === true) {
+                                          if (prev.includes(topic)) {
+                                            return prev;
+                                          }
+                                          return [...prev, topic];
+                                        }
+                                        return prev.filter((item) => item !== topic);
+                                      });
+                                    }}
+                                  />
+                                  <span className="truncate">{topic}</span>
+                                </label>
+                              );
+                            })
+                          )}
+                        </div>
+                      </ScrollArea>
+                    </div>
+                    <div className="grid gap-4">
+                      <div className="space-y-2">
+                        <span className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
+                          Acceptance rate
+                        </span>
+                        <div className="grid gap-2 sm:grid-cols-2">
+                          <Input
+                            type="number"
+                            inputMode="numeric"
+                            min={0}
+                            max={100}
+                            step={1}
+                            placeholder="Min %"
+                            value={Math.round(acceptanceRange.min)}
+                            onChange={(event) => {
+                              const value = Number(event.target.value);
+                              if (Number.isNaN(value)) return;
+                              setAcceptanceRange((prev) => {
+                                const nextMin = Math.max(0, Math.min(100, value));
+                                const next = { ...prev, min: Math.min(nextMin, prev.max) };
+                                return next;
+                              });
+                            }}
+                          />
+                          <Input
+                            type="number"
+                            inputMode="numeric"
+                            min={0}
+                            max={100}
+                            step={1}
+                            placeholder="Max %"
+                            value={Math.round(acceptanceRange.max)}
+                            onChange={(event) => {
+                              const value = Number(event.target.value);
+                              if (Number.isNaN(value)) return;
+                              setAcceptanceRange((prev) => {
+                                const nextMax = Math.max(0, Math.min(100, value));
+                                const next = { ...prev, max: Math.max(nextMax, prev.min) };
+                                return next;
+                              });
+                            }}
+                          />
+                        </div>
+                        <p className="text-[11px] text-muted-foreground">Enter percentages between 0 and 100.</p>
+                      </div>
+                      <div className="space-y-2">
+                        <span className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
+                          Frequency score
+                        </span>
+                        <div className="grid gap-2 sm:grid-cols-2">
+                          <Input
+                            type="number"
+                            inputMode="numeric"
+                            min={0}
+                            max={100}
+                            step={1}
+                            placeholder="Min"
+                            value={Math.round(frequencyRange.min)}
+                            onChange={(event) => {
+                              const value = Number(event.target.value);
+                              if (Number.isNaN(value)) return;
+                              setFrequencyRange((prev) => {
+                                const nextMin = Math.max(0, Math.min(100, value));
+                                const next = { ...prev, min: Math.min(nextMin, prev.max) };
+                                return next;
+                              });
+                            }}
+                          />
+                          <Input
+                            type="number"
+                            inputMode="numeric"
+                            min={0}
+                            max={100}
+                            step={1}
+                            placeholder="Max"
+                            value={Math.round(frequencyRange.max)}
+                            onChange={(event) => {
+                              const value = Number(event.target.value);
+                              if (Number.isNaN(value)) return;
+                              setFrequencyRange((prev) => {
+                                const nextMax = Math.max(0, Math.min(100, value));
+                                const next = { ...prev, max: Math.max(nextMax, prev.min) };
+                                return next;
+                              });
+                            }}
+                          />
+                        </div>
+                        <p className="text-[11px] text-muted-foreground">Scores range from 0 (rare) to 100 (frequent).</p>
                       </div>
                     </div>
                   </div>
@@ -657,7 +968,7 @@ export function CompanyExplorer({ initialData }: CompanyExplorerProps) {
                     </div>
                   </div>
                 </div>
-                <div className="flex h-full flex-col justify-between gap-4 rounded-xl border border-dashed border-border/60 bg-card/40 p-3 backdrop-blur">
+                <div className="flex h-full flex-col justify-between gap-5 rounded-2xl border border-dashed border-border/60 bg-card/40 p-4 backdrop-blur">
                   <div className="space-y-2">
                     <span className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
                       Filter summary
@@ -670,7 +981,19 @@ export function CompanyExplorer({ initialData }: CompanyExplorerProps) {
                         <span className="font-medium text-foreground">Sort:</span> {sortLabel}
                       </p>
                       <p>
+                        <span className="font-medium text-foreground">Topics:</span> {topicSummary}
+                      </p>
+                      <p>
                         <span className="font-medium text-foreground">Difficulty:</span> {difficultySummary}
+                      </p>
+                      <p>
+                        <span className="font-medium text-foreground">Acceptance:</span> {acceptanceSummary}
+                      </p>
+                      <p>
+                        <span className="font-medium text-foreground">Frequency:</span> {frequencySummary}
+                      </p>
+                      <p>
+                        <span className="font-medium text-foreground">Solutions:</span> {onlyWithSolutions ? "Only with community solutions" : "All"}
                       </p>
                     </div>
                   </div>
