@@ -3,8 +3,9 @@
 import { useState } from "react";
 
 import { CompanyExplorer, type CompaniesDataset } from "@/components/company-explorer";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { JobPrepGuide } from "@/components/job-prep-guide";
 import { MarkdownRenderer } from "@/components/markdown-renderer";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 
 type HomeTabsProps = {
   data: CompaniesDataset;
@@ -30,6 +31,12 @@ export function HomeTabs({ data, refresherMarkdown }: HomeTabsProps) {
           >
             C++ Refresher
           </TabsTrigger>
+          <TabsTrigger
+            value="job-guide"
+            className="rounded-full border border-border bg-muted px-4 py-1.5 text-xs font-medium uppercase tracking-wide text-muted-foreground data-[state=active]:bg-background data-[state=active]:text-foreground md:text-sm"
+          >
+            Career Prep Guide
+          </TabsTrigger>
         </TabsList>
         <TabsContent value="companies" className="mt-0">
           <CompanyExplorer initialData={data} />
@@ -51,6 +58,9 @@ export function HomeTabs({ data, refresherMarkdown }: HomeTabsProps) {
               <MarkdownRenderer markdown={refresherMarkdown} />
             </div>
           </div>
+        </TabsContent>
+        <TabsContent value="job-guide" className="mt-0">
+          <JobPrepGuide />
         </TabsContent>
       </Tabs>
     </div>
