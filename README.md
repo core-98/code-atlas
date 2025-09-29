@@ -6,8 +6,9 @@ A polished Next.js 15 single-page app that lets you explore LeetCode-style inter
 - Interactive company explorer with global search, topic chips, difficulty toggles, and range sliders for frequency and acceptance rate
 - Rich problem cards with quick links, tag badges, and optional solution resources when they are available in the dataset
 - Local-first UX: filter state and sort preferences persist in `localStorage`, and the entire dataset is bundled as static JSON for instant loads
-- Dual-tab layout that showcases the explorer alongside a Markdown-powered C++ & STL crash course stored in `c_stl_crash_course.md`
+- Multi-tab layout featuring the explorer, a Markdown-powered C++ & STL crash course stored in `c_stl_crash_course.md`, and a Career Prep Guide
 - Dark/light theme toggle backed by `next-themes` plus smooth Tailwind-driven visuals built on shadcn/ui primitives
+- Career Prep Guide tab with gated access, curated resume playbooks, interview drills, and outreach workflows for front-end, back-end, and AI-focused roles
 
 ## Tech Stack
 - Next.js 15 App Router with React 18 and TypeScript
@@ -34,10 +35,15 @@ A polished Next.js 15 single-page app that lets you explore LeetCode-style inter
 
 ## Project layout
 - `src/app` — App Router entry points (`layout.tsx`, `page.tsx`, metadata, and global styles)
-- `src/components` — Feature modules (`company-explorer`, `home-tabs`, UI primitives, theme toggle, Markdown renderer)
+- `src/components` — Feature modules (`company-explorer`, `home-tabs`, `job-prep-guide`, UI primitives, theme toggle, Markdown renderer)
 - `src/lib` — Shared utilities such as the Tailwind `cn` helper
 - `public/data/companies.json` — Static dataset powering the explorer
 - `c_stl_crash_course.md` — Markdown content rendered inside the C++ refresher tab
+- `src/app/api/career-auth/route.ts` — Validates Career Prep Guide unlock codes against `CAREER_SECRET`
+
+## Configuration
+- `CAREER_SECRET` — Optional. Set in `.env.local` to require an access code before the Career Prep Guide unlocks. Leave undefined to keep the guide open.
+- Restart the dev server after changing environment variables so Next.js picks up the updates.
 
 ## Data refresh workflow
 The explorer ships with a prebuilt `public/data/companies.json` file containing:
@@ -78,7 +84,13 @@ To regenerate the file:
 - Place the resulting file at `public/data/companies.json` and redeploy.
 
 ## C++ refresher tab
-`page.tsx` loads the Markdown stored in `c_stl_crash_course.md` and renders it through the custom parser in `MarkdownRenderer`. Update the Markdown file to tweak the curriculum or swap in an entirely different study guide. No additional build steps are required.
+- `page.tsx` loads the Markdown stored in `c_stl_crash_course.md` and renders it through the custom parser in `MarkdownRenderer`. Update the Markdown file to tweak the curriculum or swap in an entirely different study guide. No additional build steps are required.
+
+## Career Prep Guide tab
+- `JobPrepGuide` is the client-side component powering the third tab inside `home-tabs`.
+- The unlock form posts to `/api/career-auth`. When `CAREER_SECRET` is defined, only matching submissions unlock the session; without it, requests default to `valid: true`.
+- Successful unlocks persist in `sessionStorage` under `career-guide-access`, so reopening the tab in the same session keeps the content visible until the browser tab is closed.
+- Tailor the guidance by editing the data structures in `src/components/job-prep-guide.tsx` (resume variants, DSA schedules, outreach tooling, timelines, etc.).
 
 ## Deployment
 - Production builds are static-friendly; deploy on Vercel (recommended) or any platform that runs `next start`.
